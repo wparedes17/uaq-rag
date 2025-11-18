@@ -30,36 +30,82 @@ class TopicManager:
         os.makedirs('topics/user', exist_ok=True)
         os.makedirs('topics/mix', exist_ok=True)
     
+    def _get_vector_files(self) -> List[str]:
+        """Get list of files with vectors"""
+        processed_dir = "data/processed"
+        if not os.path.exists(processed_dir):
+            return []
+        
+        files = []
+        for file in os.listdir(processed_dir):
+            if file.endswith('_with_vectors.json'):
+                files.append(os.path.join(processed_dir, file))
+        
+        return sorted(files)
+    
     def create_topic_store(self) -> bool:
         """Create or restore topic store from snapshot or documents"""
-        print("\n🗄️  Creating Topic Store...")
+        print("🗄️  Creating Topic Store...")
         
-        # Check for existing snapshots
+        # List available options
         snapshots = self.qdrant_store.list_snapshots()
+        document_files = self._get_vector_files()
         
+        if not snapshots and not document_files:
+            print("❌ No snapshots or document files found")
+            return False
+        
+        # Show available options
         if snapshots:
             print("\n📋 Available snapshots:")
-            for i, snapshot in enumerate(snapshots, 1):
-                filename = os.path.basename(snapshot)
-                print(f"   {i}. {filename}")
-            
-            choice = input(f"\n🔢 Select snapshot (1-{len(snapshots)}) or 'n' for new: ").strip()
-            
-            if choice.lower() != 'n':
-                try:
-                    choice_idx = int(choice) - 1
-                    if 0 <= choice_idx < len(snapshots):
-                        selected_snapshot = snapshots[choice_idx]
-                        print(f"📂 Using snapshot: {os.path.basename(selected_snapshot)}")
-                        return self.qdrant_store.create_collection_from_snapshot(selected_snapshot)
-                    else:
-                        print("❌ Invalid selection")
-                        return False
-                except ValueError:
-                    print("❌ Invalid input")
-                    return False
+            for i, snap in enumerate(snapshots, 1):
+                print(f"   {i}. {snap['display']}")
         
-        # No snapshot selected or available, use documents
+        if document_files:
+            print("\n📄 Available document files:")
+            for i, file in enumerate(document_files, len(snapshots) + 1):
+                print(f"   {i}. {os.path.basename(file)}")
+        
+        # Build the prompt text
+        if snapshots and document_files:
+            prompt = f"\n🔢 Select option (1-{len(snapshots) + len(document_files)}) or 'n' for new: "
+        elif snapshots:
+            prompt = f"\n🔢 Select snapshot (1-{len(snapshots)}) or 'n' for new: "
+        else:
+            prompt = f"\n🔢 Select document file (1-{len(document_files)}): "
+        
+        while True:
+            try:
+                choice = input(prompt).strip()
+                
+                if choice.lower() == 'n' and document_files:
+                    # Create new from documents
+                    return self._create_new_store(document_files)
+                
+                choice_idx = int(choice) - 1
+                
+                if 0 <= choice_idx < len(snapshots):
+                    # Use snapshot
+                    selected_snapshot = snapshots[choice_idx]
+                    print(f"📂 Using snapshot: {selected_snapshot['display']}")
+                    return self.qdrant_store.create_collection_from_snapshot(selected_snapshot)
+                elif len(snapshots) <= choice_idx < len(snapshots) + len(document_files):
+                    # Use document file
+                    file_idx = choice_idx - len(snapshots)
+                    selected_file = document_files[file_idx]
+                    print(f"📂 Using document file: {os.path.basename(selected_file)}")
+                    return self.qdrant_store.create_collection_from_documents(selected_file)
+                elif not snapshots and 0 <= choice_idx < len(document_files):
+                    # Only document files available
+                    selected_file = document_files[choice_idx]
+                    print(f"📂 Using document file: {os.path.basename(selected_file)}")
+                    return self.qdrant_store.create_collection_from_documents(selected_file)
+                else:
+                    print("❌ Invalid selection. Please try again.")
+            except ValueError:
+                print("❌ Please enter a valid number.")
+    
+    def _create_new_store(self, document_files: List[str]) -> bool:
         print("\n📄 Select document file with vectors:")
         
         # List available processed files
@@ -168,6 +214,24 @@ class TopicManager:
                     continue
         
         return sorted(topics, key=lambda x: x.get('created_at', ''), reverse=True)
+    
+    def list_mix_topics(self) -> List[Dict[str, Any]]:
+        """List all mix topics"""
+        mix_dir = "topics/mix"
+        if not os.path.exists(mix_dir):
+            return []
+        
+        mix_topics = []
+        for file in os.listdir(mix_dir):
+            if file.startswith('mixed_') and file.endswith('.json'):
+                filepath = os.path.join(mix_dir, file)
+                try:
+                    mix_data = FileManager.load_json(filepath)
+                    mix_topics.append(mix_data)
+                except Exception:
+                    continue
+        
+        return sorted(mix_topics, key=lambda x: x.get('created_at', ''), reverse=True)
     
     def load_topic_vectors(self) -> List[Dict[str, Any]]:
         """Load vectors from all user topics for similarity analysis"""
@@ -375,11 +439,21 @@ class TopicManager:
         }
         
         if collection_info:
-            info.update({
-                'vectors_count': collection_info.vectors_count,
-                'indexed_vectors_count': collection_info.indexed_vectors_count,
-                'points_count': collection_info.points_count,
-                'status': collection_info.status
-            })
+            # Use available attributes from CollectionInfo
+            try:
+                info.update({
+                    'points_count': getattr(collection_info, 'points_count', 'N/A'),
+                    'status': getattr(collection_info, 'status', 'N/A'),
+                    'vectors_count': getattr(collection_info, 'vectors_count', 'N/A'),
+                    'indexed_vectors_count': getattr(collection_info, 'indexed_vectors_count', 'N/A')
+                })
+            except Exception as e:
+                print(f"⚠️  Could not get full collection info: {e}")
+                info.update({
+                    'points_count': 'N/A',
+                    'status': 'N/A',
+                    'vectors_count': 'N/A',
+                    'indexed_vectors_count': 'N/A'
+                })
         
         return info

@@ -222,10 +222,11 @@ class RAGTerminalInterface:
             print("   2. 📝 Create topic")
             print("   3. 🔄 Mix topics")
             print("   4. 📋 List user topics")
-            print("   5. ℹ️  Store info")
-            print("   6. 🔙 Back to main menu")
+            print("   5. 📝 List mix topics")
+            print("   6. ℹ️  Store info")
+            print("   7. 🔙 Back to main menu")
             
-            choice = input("\n🔢 Select option (1-6): ").strip()
+            choice = input("\n🔢 Select option (1-7): ").strip()
             
             if choice == '1':
                 self.topic_manager.create_topic_store()
@@ -264,21 +265,41 @@ class RAGTerminalInterface:
                     print("ℹ️  No user topics found")
             
             elif choice == '5':
-                info = self.topic_manager.get_store_info()
-                print("\n📊 Topic Store Info:")
-                print(f"   🗄️  Collection exists: {info['collection_exists']}")
-                if info['collection_exists']:
-                    print(f"   📄 Vectors count: {info.get('vectors_count', 'N/A')}")
-                    print(f"   📊 Points count: {info.get('points_count', 'N/A')}")
-                    print(f"   📈 Status: {info.get('status', 'N/A')}")
-                print(f"   🎯 User topics: {info['user_topics_count']}")
-                print(f"   🤖 Embedding model: {info['embedding_model']}")
+                mix_topics = self.topic_manager.list_mix_topics()
+                if mix_topics:
+                    print(f"\n📝 Found {len(mix_topics)} mix topics:")
+                    for i, mix in enumerate(mix_topics, 1):
+                        mix_name = mix.get('topic', 'Unnamed mix')
+                        print(f"   {i}. {mix_name[:60]}... (ID: {mix.get('topicID', 'unknown')[:8]}...)")
+                        print(f"      🔗 {mix.get('component_count', 0)} component topics")
+                        print(f"      📄 {mix.get('document_count', 0)} total documents")
+                        print(f"      📅 {mix.get('created_at', 'unknown')[:10]}")
+                        print(f"      🎯 Similarity threshold: {mix.get('similarity_threshold', 'N/A')}")
+                        
+                        # Show component topics if available
+                        component_topics = mix.get('component_topics', [])
+                        if component_topics:
+                            print(f"      📚 Component topic IDs: {', '.join([tid[:8] + '...' for tid in component_topics[:3]])}")
+                            if len(component_topics) > 3:
+                                print(f"         ... and {len(component_topics) - 3} more")
+                else:
+                    print("ℹ️  No mix topics found")
             
             elif choice == '6':
+                store_info = self.topic_manager.get_store_info()
+                print(f"\n📊 Topic Store Info:")
+                print(f"   🗄️  Collection exists: {store_info.get('collection_exists', False)}")
+                print(f"   📄 Vectors count: {store_info.get('vectors_count', 'N/A')}")
+                print(f"   📊 Points count: {store_info.get('points_count', 'N/A')}")
+                print(f"   📈 Status: {store_info.get('status', 'N/A')}")
+                print(f"   🎯 User topics: {store_info.get('user_topics_count', 0)}")
+                print(f"   🤖 Embedding model: {store_info.get('embedding_model', 'N/A')}")
+            
+            elif choice == '7':
                 break
             
             else:
-                print("❌ Invalid option. Please select 1-6.")
+                print("❌ Invalid option. Please select 1-7.")
     
     def run_settings_menu(self):
         """Settings management interface"""
