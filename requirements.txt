@@ -1,0 +1,16 @@
+# Core dependencies
+urllib3
+beautifulsoup4
+litellm
+
+# Vector database and clustering
+qdrant-client
+scipy
+numpy
+
+# Optional dependencies for enhanced functionality
+python-dotenv  # For .env file support
+
+# Development dependencies (optional)
+pytest  # For testing
+jupyter  # For notebooks

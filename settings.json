@@ -1,0 +1,8 @@
+{
+  "embedding_model": "text-embedding-3-small",
+  "default_topic_documents": 5,
+  "topic_mixing_threshold": 0.85,
+  "qdrant_host": "localhost",
+  "qdrant_port": 6333,
+  "collection_name": "topics"
+}
