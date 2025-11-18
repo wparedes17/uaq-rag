@@ -6,6 +6,7 @@ A modular system for crawling documents and computing embeddings
 
 import sys
 import os
+import json
 import argparse
 from typing import List, Dict, Any
 
@@ -25,6 +26,8 @@ from src.core.vector_processor import VectorProcessor
 from src.utils.data_validator import DataValidator
 from src.utils.settings import Settings
 from src.utils.file_manager import FileManager
+from src.downloaders.file_downloader import FileDownloader
+from src.core.http_client import Urllib3HttpClient
 
 # Optional topic manager import
 try:
@@ -42,6 +45,7 @@ class RAGTerminalInterface:
         self.validator = DataValidator()
         self.settings = Settings()
         self.topic_manager = None
+        self.file_downloader = FileDownloader(Urllib3HttpClient(), 'docs')
         
         # Initialize topic manager if available
         if TOPIC_MANAGER_AVAILABLE:
@@ -138,13 +142,15 @@ class RAGTerminalInterface:
             print("   2. 🧠 Compute embeddings")
             if self.topic_manager:
                 print("   3. 🎯 Topic manager")
+                print("   4. �  Swimming")
+                print("   5. ⚙️  Settings")
+                print("   6. 🚪 Exit")
+                max_choice = 6
+            else:
+                print("   3. 🏊  Swimming")
                 print("   4. ⚙️  Settings")
                 print("   5. 🚪 Exit")
                 max_choice = 5
-            else:
-                print("   3. ⚙️  Settings")
-                print("   4. 🚪 Exit")
-                max_choice = 4
             
             choice = input(f"\n🔢 Select option (1-{max_choice}): ").strip()
             
@@ -175,10 +181,18 @@ class RAGTerminalInterface:
                     # Topic manager
                     self.run_topic_manager()
                 else:
+                    # Swimming (when no topic manager)
+                    self.run_swimming_menu()
+            
+            elif choice == '4':
+                if self.topic_manager:
+                    # Swimming
+                    self.run_swimming_menu()
+                else:
                     # Settings (when no topic manager)
                     self.run_settings_menu()
             
-            elif choice == '4':
+            elif choice == '5':
                 if self.topic_manager:
                     # Settings
                     self.run_settings_menu()
@@ -187,7 +201,7 @@ class RAGTerminalInterface:
                     print("\n👋 Goodbye!")
                     break
             
-            elif choice == '5' and self.topic_manager:
+            elif choice == '6' and self.topic_manager:
                 print("\n👋 Goodbye!")
                 break
             
@@ -399,6 +413,123 @@ class RAGTerminalInterface:
             
         except Exception as e:
             print(f"❌ Error during processing: {e}")
+    
+    def run_swimming_menu(self):
+        """Swimming interface for topic pool management"""
+        while True:
+            print("\n🏊 Swimming Menu:")
+            print("   1. 📋 Create topic pool")
+            print("   2. 🌊 Swimming")
+            print("   3. 🔙 Back to main menu")
+            
+            choice = input("\n🔢 Select option (1-3): ").strip()
+            
+            if choice == '1':
+                self.create_topic_pool()
+            elif choice == '2':
+                print("🌊 Swimming functionality not yet implemented")
+            elif choice == '3':
+                break
+            else:
+                print("❌ Invalid option. Please select 1-3.")
+    
+    def create_topic_pool(self):
+        """Create topic pool by listing topics and downloading missing documents"""
+        print("\n📋 Creating Topic Pool...")
+        print("=" * 40)
+        
+        # Get topics from user and mix directories
+        user_topics = self._get_topics_from_directory('topics/user')
+        mix_topics = self._get_topics_from_directory('topics/mix')
+        
+        all_topics = user_topics + mix_topics
+        
+        if not all_topics:
+            print("❌ No topics found in topics/user or topics/mix directories")
+            return
+        
+        print(f"📊 Found {len(all_topics)} topics:")
+        print(f"   📁 User topics: {len(user_topics)}")
+        print(f"   📁 Mix topics: {len(mix_topics)}")
+        
+        # Collect all document IDs and PDF URLs
+        all_documents = {}
+        for topic_file, topic_data in all_topics:
+            documents = topic_data.get('documents', [])
+            for doc in documents:
+                doc_id = str(doc.get('metadata', {}).get('id', ''))
+                pdf_url = ''
+                
+                # Extract PDF URL from metadata
+                citation_urls = doc.get('metadata', {}).get('citation_pdf_url', [])
+                if citation_urls and len(citation_urls) > 0:
+                    pdf_url = citation_urls[0]
+                
+                if doc_id and pdf_url:
+                    all_documents[doc_id] = {
+                        'pdf_url': pdf_url,
+                        'title': doc.get('title', 'Unknown'),
+                        'topic_file': topic_file
+                    }
+        
+        print(f"\n📄 Found {len(all_documents)} unique documents")
+        
+        # Check which documents are already available
+        missing_docs = self._check_missing_documents(all_documents)
+        
+        if not missing_docs:
+            print("✅ All documents are already available in docs/ directory")
+            return
+        
+        print(f"\n⬇️  Need to download {len(missing_docs)} missing documents")
+        
+        # Download missing documents
+        downloaded_count = 0
+        failed_count = 0
+        
+        for doc_id, doc_info in missing_docs.items():
+            print(f"\n📥 Downloading document {doc_id}: {doc_info['title'][:50]}...")
+            try:
+                file_path = self.file_downloader.download_file(doc_info['pdf_url'], doc_id)
+                print(f"✅ Downloaded to: {file_path}")
+                downloaded_count += 1
+            except Exception as e:
+                print(f"❌ Failed to download: {e}")
+                failed_count += 1
+        
+        print(f"\n🎉 Topic pool creation completed!")
+        print(f"   ✅ Downloaded: {downloaded_count} documents")
+        print(f"   ❌ Failed: {failed_count} documents")
+        print(f"   📁 All documents saved in: docs/")
+    
+    def _get_topics_from_directory(self, directory: str) -> List[tuple]:
+        """Get all topic files from a directory"""
+        topics = []
+        if not os.path.exists(directory):
+            return topics
+        
+        for filename in os.listdir(directory):
+            if filename.endswith('.json'):
+                filepath = os.path.join(directory, filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        topic_data = json.load(f)
+                    topics.append((filename, topic_data))
+                except Exception as e:
+                    print(f"⚠️  Error reading {filename}: {e}")
+        
+        return topics
+    
+    def _check_missing_documents(self, all_documents: dict) -> dict:
+        """Check which documents are missing from docs/ directory"""
+        missing = {}
+        
+        for doc_id, doc_info in all_documents.items():
+            doc_path = os.path.join('docs', f'{doc_id}.pdf')
+            if not os.path.exists(doc_path):
+                missing[doc_id] = doc_info
+        
+        return missing
 
 
 def main():
